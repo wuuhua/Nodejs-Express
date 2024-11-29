@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken')
 const dotenv = require('dotenv')
 const bcrypt = require('bcrypt') // 密碼加密
+const { z } = require('zod')
 const { PrismaClient } = require('@prisma/client') // 資料庫
 const prisma = new PrismaClient() // 建立 Prisma Client
 const express = require('express')
@@ -10,16 +11,50 @@ dotenv.config()
 
 const SECRET_KEY = process.env.SECRET_KEY
 
-// 註冊
-router.post('/register', async (req, res) => {
+// 定義註冊 schema
+const registerSchema = z.object({
+    username: z
+    .string()
+    .min(3, '名稱至少需要3個字元')
+    .max(20, '名稱不得超過20字元'),
+    password: z.string().min(8, '密碼至少需要8個字元'),
+    email: z.string().email('請輸入正確信箱'),
+    age: z.number().min(13, '年齡須大於13歲').optional(), // 非必填
+    phone_number: z.string().regex(/^09\d{2}-?\d{3}-?\d{3}$/)
+})
+
+// 驗證註冊 middleware
+const validateRegister = (req, res, next) => {
     try {
-        const { username, password } = req.body
+        registerSchema.parse(req.body)
+        next()
+    } catch(error) {
+        // zod 錯誤訊息格式化
+        const formattedErrors = err.errors.map((err) => ({
+            field: err.path.join('.'),
+            message: err.message
+        }))
+
+        res.status(400).json({
+            error: '驗證錯誤',
+            details: formattedErrors
+        })
+    }
+}
+
+// 註冊
+router.post('/register', validateRegister, async (req, res) => {
+    try {
+        const { username, password, email, age, phone_number } = req.body
         const hashedPassword = await bcrypt.hash(password, 10) // 密碼加密處理
 
         await prisma.users.create({
             data: {
                 username,
-                password: hashedPassword
+                password: hashedPassword,
+                email,
+                age,
+                phone_number
             }
         })
 
